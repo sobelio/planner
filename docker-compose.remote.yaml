@@ -1,0 +1,11 @@
+version: "3.9"
+services:
+  app:
+    image: ghcr.io/sobelio/planner:main
+    working_dir: /app
+    ports:
+      - "28050:3000"
+    volumes:
+      - ./db:/db
+    environment:
+      - DATABASE_URL=/db/db.sqlite3
