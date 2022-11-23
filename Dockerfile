@@ -40,6 +40,7 @@ RUN \
 ##### RUNNER
 
 FROM --platform=linux/amd64  node:18-alpine AS runner
+LABEL org.opencontainers.image.source = "https://github.com/sobelio/planner"
 WORKDIR /app
 
 ENV NODE_ENV production
