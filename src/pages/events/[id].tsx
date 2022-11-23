@@ -1,7 +1,15 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { type NextPage } from "next";
+import { type GetServerSidePropsContext, type NextPage } from "next";
 import Head from "next/head";
-import { Dispatch, useCallback, useMemo, useReducer, useState } from "react";
+import {
+  useCallback,
+  useMemo,
+  useReducer,
+  useState,
+  type Dispatch,
+  type FormEvent,
+  type PointerEvent,
+} from "react";
 
 import ErrorMessage from "../../components/ErrorMessage";
 import Layout from "../../components/Layout";
@@ -488,7 +496,7 @@ function OptionBadge({
   onClick?: (id: string, reverse: boolean) => void;
 }) {
   const handlePointerUp = useCallback(
-    (e: PointerEvent) => {
+    (e: PointerEvent<HTMLButtonElement>) => {
       e.preventDefault();
       if (onClick) {
         onClick(id, e.button == 2 || e.altKey);
