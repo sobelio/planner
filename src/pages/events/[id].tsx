@@ -422,7 +422,9 @@ function Responses({
             )}
         </>
       ))}
-      <div>Summary</div>
+      <div className="align-center font-italics font-semi-bold self-center italic">
+        Summary
+      </div>
       {Array.from(labels)
         .map(([optionId, data]) => ({
           optionId,
