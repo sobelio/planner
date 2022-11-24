@@ -275,37 +275,40 @@ function Responses({
     return <div className="w-full text-center">No responses yet</div>;
   }
   const responsesEl = (
-    <ul>
+    <div
+      className="grid gap-1"
+      style={{
+        gridTemplateColumns: `minmax(10vw, max-content) repeat(${options.length}, 1fr)`,
+      }}
+    >
       {responses.map((response) => (
-        <li key={response.respondent.name} className="mb-4">
-          <div className="flex items-center">
-            <div className="flex-grow">{response.respondent.name}</div>
-            <div className="flex flex-row gap-3">
-              {options
-                .map((option) => {
-                  const selectedOption = response.selectedOptions.find(
-                    (x) => x.optionId === option.id
-                  );
-                  return {
-                    option,
-                    selectedOption,
-                  };
-                })
-                .map(({ option, selectedOption }) =>
-                  selectedOption == null ? null : (
-                    <OptionBadge
-                      key={assertNotNull(selectedOption).optionId}
-                      id={option?.id ?? ""}
-                      date={option?.date ?? "Unknown"}
-                      responseData={assertNotNull(selectedOption)}
-                    />
-                  )
-                )}
-            </div>
-          </div>
-        </li>
+        <>
+          <div>{response.respondent.name}</div>
+          {options
+            .map((option) => {
+              const selectedOption = response.selectedOptions.find(
+                (x) => x.optionId === option.id
+              );
+              return {
+                option,
+                selectedOption,
+              };
+            })
+            .map(({ option, selectedOption }) =>
+              selectedOption == null ? (
+                <div></div>
+              ) : (
+                <OptionBadge
+                  key={assertNotNull(selectedOption).optionId}
+                  id={option?.id ?? ""}
+                  date={option?.date ?? "Unknown"}
+                  responseData={assertNotNull(selectedOption)}
+                />
+              )
+            )}
+        </>
       ))}
-    </ul>
+    </div>
   );
   // If there are responses show each response as a row in a list
   return <div>{responsesEl}</div>;
