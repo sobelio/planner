@@ -9,8 +9,8 @@ import {
   type Dispatch,
   type FormEvent,
   type PointerEvent,
+  type PropsWithChildren,
 } from "react";
-
 import ErrorMessage from "../../components/ErrorMessage";
 import Layout from "../../components/Layout";
 import LoadingIndicator from "../../components/LoadingIndicator";
@@ -41,11 +41,6 @@ const EventPage: NextPage<{ id: string }> = ({ id }) => {
           <Sheet title={event.name} wide>
             <p>{event.description}</p>
           </Sheet>
-          {event.responses.length > 100 && (
-            <Sheet title="Summary" wide>
-              <Summary responses={event.responses} options={event.options} />
-            </Sheet>
-          )}
           <Sheet title="Attendees" wide>
             <Responses responses={event.responses} options={event.options} />
           </Sheet>
@@ -72,13 +67,14 @@ function sortByNullishComparator<T>(
   });
 }
 
-function rankBySortOrder<T>(
+type Ranked<T> = { item: T; rank: number };
+
+function rankByComparator<T>(
   arr: Array<T>,
-  fn: (a: T) => number | null | undefined
-): Array<{ item: T; rank: number }> {
-  const sorted = sortByNullishComparator(arr, fn);
+  fn: (a: T, b: T) => number
+): Array<Ranked<T>> {
+  const sorted = Array.from(arr).sort(fn);
   const baseRanking = sorted.map((item, i) => ({ item, rank: i }));
-  // We need to find equal items and assign them the same rank
   const result = [];
   for (const item of baseRanking) {
     if (result.length === 0) {
@@ -89,7 +85,7 @@ function rankBySortOrder<T>(
     if (lastItem == null) {
       throw new Error("lastItem is null");
     }
-    if (fn(item.item) === fn(lastItem.item)) {
+    if (fn(item.item, lastItem.item) == 0) {
       item.rank = lastItem.rank;
     } else {
       item.rank = lastItem.rank + 1;
@@ -99,15 +95,126 @@ function rankBySortOrder<T>(
   return result;
 }
 
-type LabeledResponses = Map<
-  string,
-  {
-    leastNumberOfNosRank: number;
-    leastNumberOfNosMaybesRank: number;
-    bestScoreRank: number;
-    overallRank: number;
+type SortOrder<T> = (a: T) => number | null | undefined;
+type ComparatorFn<T> = (a: T, b: T) => number;
+
+function sortOrderToComparator<T>(f: SortOrder<T>): ComparatorFn<T> {
+  return (a: T, b: T) => {
+    const aVal = f(a);
+    const bVal = f(b);
+    if (aVal == null && bVal == null) return 0;
+    if (aVal == null) return 1;
+    if (bVal == null) return -1;
+    return aVal - bVal;
+  };
+}
+
+function rankBySortOrder<T>(arr: Array<T>, fn: SortOrder<T>): Array<Ranked<T>> {
+  return rankByComparator(arr, sortOrderToComparator(fn));
+}
+
+interface RankLabels {
+  leastNumberOfNosRank: number;
+  leastNumberOfNosMaybesRank: number;
+  bestScoreRank: number;
+  overallRank: number;
+  strictlySuperiorRank: number;
+}
+
+enum Label {
+  BestOverall = "Best Overall",
+  SecondBest = "Second Best",
+  MostPreferred = "Most Preferred",
+  FewestNos = "Fewest Nos",
+  FewestNosMaybes = "Fewest Nos and Maybes",
+  Nothing = "Nothing",
+  Suboptimal = "Suboptimal",
+}
+
+function labelToEmoji(l: Label): string {
+  switch (l) {
+    case Label.BestOverall:
+      return "🏆";
+    case Label.SecondBest:
+      return "🥈";
+    case Label.FewestNos:
+      return "👍";
+    case Label.FewestNosMaybes:
+      return "👍";
+    case Label.MostPreferred:
+      return "👍";
+    case Label.Nothing:
+      return "";
+    case Label.Suboptimal:
+      return "👎";
   }
->;
+}
+
+function backgroundColorForLabel(value: Label): string {
+  let background;
+  let foreground;
+  switch (value) {
+    case Label.BestOverall:
+      background = "bg-sky-200";
+      foreground = "text-sky-800";
+      break;
+    case Label.SecondBest:
+      background = "bg-teal-200";
+      foreground = "text-teal-800";
+      break;
+    case Label.FewestNos:
+      background = "bg-emerald-200";
+      foreground = "text-emerald-800";
+      break;
+    case Label.FewestNosMaybes:
+      background = "bg-emerald-200";
+      foreground = "text-emerald-800";
+      break;
+    case Label.MostPreferred:
+      background = "bg-emerald-200";
+      foreground = "text-emerald-800";
+      break;
+    case Label.Nothing:
+      background = "bg-gray-200";
+      foreground = "text-gray-800";
+      break;
+    case Label.Suboptimal:
+      background = "bg-red-200";
+      foreground = "text-red-800";
+      break;
+    default:
+      background = "bg-gray-200";
+      foreground = "text-gray-800";
+  }
+  return `${background} ${foreground}`;
+}
+
+function determineMostSignificantLabel(
+  rl: RankLabels,
+  numberOfOptions: number
+): Label {
+  if (rl.overallRank === 0) {
+    return Label.BestOverall;
+  }
+  if (rl.overallRank === 1 && numberOfOptions > 2) {
+    return Label.SecondBest;
+  }
+  if (rl.bestScoreRank === 0) {
+    return Label.MostPreferred;
+  }
+  if (rl.leastNumberOfNosRank === 0) {
+    return Label.FewestNos;
+  }
+  if (rl.leastNumberOfNosMaybesRank === 0) {
+    return Label.FewestNosMaybes;
+  }
+  if (rl.strictlySuperiorRank > 0) {
+    return Label.Suboptimal;
+  }
+  return Label.Nothing;
+}
+
+type LabeledResponses = Map<string, RankLabels>;
 
 function labelResponses(
   options: Option[],
@@ -149,16 +256,45 @@ function labelResponses(
     ) {
       throw new Error("Could not find rank");
     }
+    // Least to most important ranking
     const rankingComponents = [
-      numberOfNosRank,
-      numberOfNosMaybesRank,
       bestScoreRank,
+      numberOfNosMaybesRank,
+      numberOfNosRank,
     ];
     const aggregateRankScore = rankingComponents
       .map((x, i) => i * numberOfOptions + x.rank)
       .reduce((acc, x) => acc + x, 0);
     return aggregateRankScore;
   });
+
+  const strictlySuperior = rankByComparator(options, (a, b) => {
+    // If A is smaller than B in every dimension, then A is strictly superior to B
+    // If A is bigger than B in every dimension, then A is strictly inferior to B
+    // If A is bigger than B in some dimensions and smaller in others, then A and B are equal
+    const nosComp =
+      assertNotNull(leastNumberOfNos.find((x) => x.item.id === a.id)).rank -
+      assertNotNull(leastNumberOfNos.find((x) => x.item.id === b.id)).rank;
+    const nosMaybesComp =
+      assertNotNull(leastNumberOfNosMaybes.find((x) => x.item.id === a.id))
+        .rank -
+      assertNotNull(leastNumberOfNosMaybes.find((x) => x.item.id === b.id))
+        .rank;
+    const scoreComp =
+      assertNotNull(bestScore.find((x) => x.item.id === a.id)).rank -
+      assertNotNull(bestScore.find((x) => x.item.id === b.id)).rank;
+    if (nosComp == 0 && nosMaybesComp == 0 && scoreComp == 0) {
+      return 0;
+    }
+    if (nosComp <= 0 && nosMaybesComp <= 0 && scoreComp <= 0) {
+      return -1;
+    } else if (nosComp >= 0 && nosMaybesComp >= 0 && scoreComp >= 0) {
+      return 1;
+    } else {
+      return 0;
+    }
+  });
+
   const items = options
     .map((x) => x.id)
     .map((x) => {
@@ -174,21 +310,17 @@ function labelResponses(
       const overallRank = assertNotNull(
         overall.find((y) => y.item.id === x)
       ).rank;
-      const ent: [
-        string,
-        {
-          leastNumberOfNosRank: number;
-          leastNumberOfNosMaybesRank: number;
-          bestScoreRank: number;
-          overallRank: number;
-        }
-      ] = [
+      const strictlySuperiorRank = assertNotNull(
+        strictlySuperior.find((y) => y.item.id === x)
+      ).rank;
+      const ent: [string, RankLabels] = [
         x,
         {
           leastNumberOfNosRank,
           leastNumberOfNosMaybesRank,
           bestScoreRank,
           overallRank,
+          strictlySuperiorRank,
         },
       ];
       return ent;
@@ -216,36 +348,13 @@ function responsePreferenceCardianlity(
 ): Map<string, Map<number, number>> {
   const responsesPreferenceSet = new Map<string, Map<number, number>>();
   for (const opt of allChosenOptions) {
-    const pref = responsesPreferenceSet.get(opt.optionId) ?? new Map();
+    if (!responsesPreferenceSet.has(opt.optionId)) {
+      responsesPreferenceSet.set(opt.optionId, new Map());
+    }
+    const pref = assertNotNull(responsesPreferenceSet.get(opt.optionId));
     pref.set(opt.preference, (pref.get(opt.preference) ?? 0) + 1);
   }
   return responsesPreferenceSet;
-}
-
-function Summary({
-  responses,
-  options,
-}: {
-  responses: Response[];
-  options: Option[];
-}) {
-  const labels = useLabeledResponses(options, responses);
-  const optionEl = options.map((x) => {
-    const label = labels.get(x.id);
-    if (label == null) {
-      throw new Error("Could not find label");
-    }
-    return (
-      <div key={x.id}>
-        <div>{x.date}</div>
-        <div>BS{label.bestScoreRank}</div>
-        <div>LN{label.leastNumberOfNosRank}</div>
-        <div>LN+M{label.leastNumberOfNosMaybesRank}</div>
-      </div>
-    );
-  });
-
-  return <div>{optionEl}</div>;
 }
 
 interface Option {
@@ -270,20 +379,25 @@ function Responses({
   responses: Response[];
   options: Option[];
 }) {
+  const labels = useLabeledResponses(options, responses);
   // If no responses, show a message
   if (responses.length === 0) {
     return <div className="w-full text-center">No responses yet</div>;
   }
   const responsesEl = (
     <div
-      className="grid gap-1"
+      className="col-gap-4 row-gap-2 grid"
       style={{
-        gridTemplateColumns: `minmax(10vw, max-content) repeat(${options.length}, 1fr)`,
+        rowGap: "0.5rem",
+        columnGap: "1rem",
+        gridTemplateColumns: `minmax(5vw, max-content) repeat(${options.length}, 1fr)`,
       }}
     >
       {responses.map((response) => (
         <>
-          <div>{response.respondent.name}</div>
+          <div className="align-center font-italics self-center italic">
+            {response.respondent.name}
+          </div>
           {options
             .map((option) => {
               const selectedOption = response.selectedOptions.find(
@@ -308,6 +422,23 @@ function Responses({
             )}
         </>
       ))}
+      <div>Summary</div>
+      {Array.from(labels)
+        .map(([optionId, data]) => ({
+          optionId,
+          data,
+          label: determineMostSignificantLabel(data, options.length),
+        }))
+        .map(({ optionId, label }) =>
+          label == Label.Nothing ? (
+            <div></div>
+          ) : (
+            <Badge key={optionId} className={backgroundColorForLabel(label)}>
+              {label}
+              {labelToEmoji(label)}
+            </Badge>
+          )
+        )}
     </div>
   );
   // If there are responses show each response as a row in a list
@@ -478,6 +609,28 @@ function formatDate(date: string): string {
   }
 }
 
+function Badge({
+  onClick,
+  children,
+  className,
+  title,
+}: PropsWithChildren<{
+  onClick?: (e: PointerEvent<HTMLButtonElement>) => void;
+  title?: string;
+  className?: string;
+}>) {
+  return (
+    <button
+      onClick={(e) => e.preventDefault()}
+      title={title}
+      onPointerUp={onClick}
+      className={"rounded-lg p-2 tabular-nums " + (className ?? "")}
+    >
+      {children}
+    </button>
+  );
+}
+
 function OptionBadge({
   date,
   responseData,
@@ -499,21 +652,17 @@ function OptionBadge({
     [id, onClick]
   );
   return (
-    <button
-      onClick={(e) => e.preventDefault()}
+    <Badge
       title={titleForPreference(responseData?.preference)}
-      onPointerUp={handlePointerUp}
-      className={
-        "rounded-lg p-2 tabular-nums " +
-        backgroundColorForPreference(responseData?.preference)
-      }
+      onClick={handlePointerUp}
+      className={backgroundColorForPreference(responseData?.preference)}
     >
       {formatDate(date)}
       {responseData != null
         ? preferenceToEmoji(responseData.preference) +
           uncertaintyToEmoji(responseData.uncertain)
         : " "}
-    </button>
+    </Badge>
   );
 }
 
