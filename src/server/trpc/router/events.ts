@@ -68,7 +68,7 @@ export const eventsRouter = router({
           message: "Event not found",
         });
       }
-
+      event.options.sort((a, b) => a.date.localeCompare(b.date));
       return event;
     }),
   createEvent: publicProcedure

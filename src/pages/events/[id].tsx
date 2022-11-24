@@ -274,21 +274,6 @@ function Responses({
   if (responses.length === 0) {
     return <div className="w-full text-center">No responses yet</div>;
   }
-
-  const m = new Map();
-  for (const response of responses) {
-    for (const selectedOption of response.selectedOptions) {
-      const option = options.find((o) => o.id === selectedOption.optionId);
-      if (option == null) {
-        continue;
-      }
-      const key = option.date;
-      const value = m.get(key) ?? [];
-      value.push({ selectedOption, respondent: response.respondent });
-      m.set(key, value);
-    }
-  }
-
   const responsesEl = (
     <ul>
       {responses.map((response) => (
@@ -296,20 +281,26 @@ function Responses({
           <div className="flex items-center">
             <div className="flex-grow">{response.respondent.name}</div>
             <div className="flex flex-row gap-3">
-              {response.selectedOptions.map((selectedOption) => {
-                const option =
-                  options.find(
-                    (option) => option.id === selectedOption.optionId
-                  ) ?? null;
-                return (
-                  <OptionBadge
-                    key={selectedOption.optionId}
-                    id={option?.id ?? ""}
-                    date={option?.date ?? "Unknown"}
-                    responseData={selectedOption}
-                  />
-                );
-              })}
+              {options
+                .map((option) => {
+                  const selectedOption = response.selectedOptions.find(
+                    (x) => x.optionId === option.id
+                  );
+                  return {
+                    option,
+                    selectedOption,
+                  };
+                })
+                .map(({ option, selectedOption }) =>
+                  selectedOption == null ? null : (
+                    <OptionBadge
+                      key={assertNotNull(selectedOption).optionId}
+                      id={option?.id ?? ""}
+                      date={option?.date ?? "Unknown"}
+                      responseData={assertNotNull(selectedOption)}
+                    />
+                  )
+                )}
             </div>
           </div>
         </li>
